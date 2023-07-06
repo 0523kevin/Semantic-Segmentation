@@ -1,10 +1,10 @@
 num=350
-model_list='hrnetocr' #deeplabv3plus' #unet2plus' #hrnetocr' #unet2plus' #deeplabv3plus' #hrnetocr' #deeplabv3plus' #unet2plus' # pspnet' #deeplabv3  
-encoder_list=None #r152' #r101' #effb5 ' # effb3'
-opt_list='Adam' # AdamW' # SGD'
-loss_list='dice' #dicefocal' # ' # tversky softBCE' # BCE'
-aug_list='base2' # brightclaherotate' #brightclahe' # bright2' # base2' #clahe2 bright2' # clahe3 bright2' # brightclahe' # clahe4 bright rotate  clahe1 clahe2' # clahe centercrop2' #centercrop2' # base  center_empty' # center_grid gridmask cropnonempty grid_empty'
-sch_list=None # 'CosineAnnealingLR' # StepLR'
+model_list='unet2plus'
+encoder_list='r152' #r101'
+opt_list='Adam' # AdamW'
+loss_list='dice' #dicefocal'
+aug_list='base2' 
+sch_list='CosineAnnealingLR'
 
 num_workers=2
 batch_size=4
@@ -50,5 +50,3 @@ do
         done    
     done
 done
-
-#                            --lr_scheduler $sch\

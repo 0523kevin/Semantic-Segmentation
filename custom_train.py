@@ -25,8 +25,8 @@ from torchvision import models
 from argparse import ArgumentParser
 
 # baseline
-from utils import dice_coef, save_model, set_seed, AverageMeter
-from dataset import XRayDataset, XRayTrainDataset, init_transform, CutMixCollator, CutMixCriterion
+from utils import dice_coef, save_model, set_seed
+from dataset import XRayDataset, XRayCopyDataset, init_transform
 from model import init_models
 from inference import inference
 from loss import init_loss
@@ -64,7 +64,6 @@ def validation(epoch, model, data_loader, criterion, wandb_off, thr=0.5):
             
             dice = dice_coef(outputs, masks)
             dices.append(dice)
-
                 
     dices = torch.cat(dices, 0)
     dices_per_class = torch.mean(dices, 0)
@@ -91,8 +90,6 @@ def validation(epoch, model, data_loader, criterion, wandb_off, thr=0.5):
 
 def train(saved_dir, exp_name, max_epoch, model, data_loader, val_loader, val_every, train_criterion, val_criterion, optimizer, lr_scheduler, wandb_off, mixed):
     print(f'Start training..')
-    data_time = AverageMeter()
-    n_class = len(CLASSES)
     best_dice = 0.
     
     if mixed:
@@ -103,12 +100,10 @@ def train(saved_dir, exp_name, max_epoch, model, data_loader, val_loader, val_ev
     for epoch in range(max_epoch):
         model.train()
 
-        for step, (images, masks) in enumerate(data_loader):   
-            data_time.update(time.time() - end)
-         
-            # images, masks = images.cuda(), masks.cuda()
+        for step, (images, masks) in enumerate(data_loader):            
             images = images.cuda()
 
+            # for HRNetOCR
             if isinstance(masks, (tuple, list)):
                 masks1, masks2, lam = masks
                 masks = (masks1.cuda(), masks2.cuda(), lam)
@@ -116,7 +111,6 @@ def train(saved_dir, exp_name, max_epoch, model, data_loader, val_loader, val_ev
                 masks = masks.cuda()
 
             model = model.cuda()
-
             optimizer.zero_grad()
 
             ###### mixed precision ######
@@ -140,16 +134,12 @@ def train(saved_dir, exp_name, max_epoch, model, data_loader, val_loader, val_ev
                 loss.backward()
                 optimizer.step()
             
-            
-            
-            
             if (step + 1) % 25 == 0:
                 print(
                     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | '
                     f'Epoch [{epoch+1}/{max_epoch}], '
                     f'Step [{step+1}/{len(data_loader)}], '
                     f'Loss: {round(loss.item(),4)},'
-                    f'Data Time: {data_time.avg}'
                 )
 
                 if not wandb_off:
@@ -180,6 +170,7 @@ def train(saved_dir, exp_name, max_epoch, model, data_loader, val_loader, val_ev
 
 
 def main(saved_dir, args):
+
     set_seed()
 
     if not args.wandb_off:
@@ -190,11 +181,10 @@ def main(saved_dir, args):
         )
     
     tf_train = init_transform(args.aug) 
-    tf_val = init_transform('base2') 
+    tf_val = init_transform('base2') #(1024,1024)
     
-    ################# if copy paste ##############
     if args.copypaste:
-        train_dataset = XRayTrainDataset(is_train=True, transforms=tf_train, k=args.k)
+        train_dataset = XRayCopyDataset(is_train=True, transforms=tf_train, k=args.k)
         print(f'Copy Paste applied : {args.copypaste}, k : {args.k}')
     else:
         train_dataset = XRayDataset(is_train=True, transforms=tf_train) 
@@ -204,14 +194,12 @@ def main(saved_dir, args):
     valid_loader = DataLoader(dataset=valid_dataset, batch_size=2, shuffle=False, num_workers=args.val_num_workers, drop_last=False)
 
     model = init_models(args.model, args.encoder)
-
     train_criterion = init_loss(args.loss)
     val_criterion = init_loss(args.loss)
-
     optimizer = __import__('torch.optim', fromlist='optim').__dict__[args.optimizer](model.parameters(), lr=args.learning_rate)
 
-    if args.lr_scheduler is not None:
-        lr_scheduler = __import__('torch.optim.lr_scheduler', fromlist='lr_scheduler').__dict__[args.lr_scheduler](optimizer, T_max=args.max_epoch)
+    if args.lr_scheduler == 'CosineAnnealingLR':
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.max_epoch)
     else:
         lr_scheduler = None
 
@@ -223,11 +211,11 @@ def parse_args():
 
     # Conventional args
     parser.add_argument("--exp_name", type=str, default="318_deeplabv3plus_r101_dice_resize1024")
-    parser.add_argument("--wandb_off", default=True) # None -> wandb on , True -> wandb off
+    parser.add_argument("--wandb_off", default=None) # None -> wandb on , True -> wandb off
 
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--mixed', default=None) # mixed precision
-    parser.add_argument('--copypaste', default=None) # copypaste augmentation
+    parser.add_argument('--copypaste', default=True) # copypaste augmentation
     parser.add_argument('--k', type=int, default=3)
 
     parser.add_argument('--model', type=str, default='deeplabv3')
@@ -267,152 +255,3 @@ if __name__=='__main__':
 
     main(saved_dir, args)
     inference(saved_dir, args.exp_name)
-
-
-
-
-
-
-
-
-
-
-
-# def train(saved_dir, exp_name, max_epoch, model, data_loader, val_loader, val_every, train_criterion, val_criterion, optimizer, lr_scheduler, wandb_off, mixed):
-#     print(f'Start training..')
-#     data_time = AverageMeter()
-#     n_class = len(CLASSES)
-#     best_dice = 0.
-    
-#     if mixed:
-#         use_amp = True
-#         scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
-    
-#     end = time.time()
-#     for epoch in range(max_epoch):
-#         model.train()
-
-#         for step, (images, masks) in enumerate(data_loader):   
-#             data_time.update(time.time() - end)
-         
-#             # images, masks = images.cuda(), masks.cuda()
-#             images = images.cuda()
-
-#             if isinstance(masks, (tuple, list)):
-#                 masks1, masks2, lam = masks
-#                 masks = (masks1.cuda(), masks2.cuda(), lam)
-#             else:
-#                 masks = masks.cuda()
-
-#             model = model.cuda()
-            
-#             ###### mixed precision ######
-#             optimizer.zero_grad()
-#             if mixed:
-#                 with torch.cuda.amp.autocast(enabled=use_amp):
-#                     outputs = model(images)
-#                     loss = train_criterion(outputs, masks)
-#                 scaler.scale(loss).backward()
-#                 scaler.step(optimizer)
-#                 scaler.update()        
-#             #############################    
-            
-#             else:
-#                 outputs = model(images)
-
-#                 loss = train_criterion(outputs, masks)
-#                 optimizer.zero_grad()
-#                 loss.backward()
-#                 optimizer.step()
-            
-            
-#             if (step + 1) % 25 == 0:
-#                 print(
-#                     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | '
-#                     f'Epoch [{epoch+1}/{max_epoch}], '
-#                     f'Step [{step+1}/{len(data_loader)}], '
-#                     f'Loss: {round(loss.item(),4)},'
-#                     f'Data Time: {data_time.avg}'
-#                 )
-
-#                 if not wandb_off:
-#                     wandb.log(
-#                         {
-#                             "Train Loss" : loss
-#                         }
-#                     )
-        
-#         if lr_scheduler is not None:
-#             lr_scheduler.step()
-
-#         if (epoch + 1) % val_every == 0:
-#             dice = validation(epoch + 1, model, val_loader, val_criterion, wandb_off)
-            
-#             if not wandb_off:
-#                 wandb.log(
-#                     {
-#                         "Val Dice" : dice
-#                     }
-#                 )
-            
-#             if best_dice < dice:
-#                 print(f"Best performance at epoch: {epoch + 1}, {best_dice:.4f} -> {dice:.4f}")
-#                 print(f"Save model in {saved_dir}")
-#                 best_dice = dice
-#                 save_model(model, saved_dir, file_name=f"{exp_name}_best_model.pt")
-
-
-# def main(saved_dir, args):
-#     set_seed()
-
-#     if not args.wandb_off:
-#         wandb.init(
-#             project='semantic-segmentation',
-#             entity='cv-18',
-#             name=f'{args.exp_name}',
-
-#             config = {
-#                 "learning_rate" : args.learning_rate,
-#                 # "optimizer" : args.optimizer,
-#                 # "loss" : args.loss,
-#                 # "batch_size" : args.batch_size,
-#                 # "epochs" : args.max_epoch 
-#             }
-#         )
-    
-#     ################# Cutmix 적용시 ################
-#     if args.aug == 'cutmix':
-#         tf_train = init_transform('base')
-#     else: 
-#         tf_train = init_transform(args.aug) 
-
-#     tf_val = init_transform('base2') # A.Resize(512, 512)
-    
-#     ################# if copy paste ##############
-#     train_dataset = XRayTrainDataset(is_train=True, transforms=tf_train)
-
-#     # train_dataset = XRayDataset(is_train=True, transforms=tf_train) 
-#     valid_dataset = XRayDataset(is_train=False, transforms=tf_val)
-
-#     valid_loader = DataLoader(dataset=valid_dataset, batch_size=2, shuffle=False, num_workers=args.val_num_workers, drop_last=False)
-
-#     if args.aug == 'cutmix':
-#         collator = CutMixCollator(alpha=1.0)
-#         train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collator, num_workers=args.num_workers, drop_last=True)
-#         train_criterion = CutMixCriterion(reduction='mean')
-#     else:
-#         train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
-#         train_criterion = init_loss(args.loss)
-    
-#     model = init_models(args.model, args.encoder)
-
-#     val_criterion = init_loss(args.loss)
-
-#     optimizer = __import__('torch.optim', fromlist='optim').__dict__[args.optimizer](model.parameters(), lr=args.learning_rate)
-
-#     if args.lr_scheduler is not None:
-#         lr_scheduler = __import__('torch.optim.lr_scheduler', fromlist='lr_scheduler').__dict__[args.lr_scheduler](optimizer, T_max=args.max_epoch)
-#     else:
-#         lr_scheduler = None
-
-#     train(saved_dir, args.exp_name, args.max_epoch, model, train_loader, valid_loader, args.val_every, train_criterion, val_criterion, optimizer, lr_scheduler, args.wandb_off, args.mixed)
