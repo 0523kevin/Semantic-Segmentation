@@ -101,7 +101,6 @@ def init_transform(name):
             A.RandomBrightnessContrast(brightness_limit=0.2),
             A.CLAHE(clip_limit=4),
             A.RandomRotate90()
-
         ]),
         "gridmask" : A.Compose([
             A.Resize(512, 512),
@@ -142,7 +141,6 @@ def init_transform(name):
             A.CenterCrop(352, 352),
             A.augmentations.crops.transforms.CropNonEmptyMaskIfExists(height=256, width=256),
         ]),
-        
     }
 
     return transform_dict[name]
@@ -152,31 +150,23 @@ def init_transform(name):
 from PIL import Image, ImageDraw
 import random
 
-class XRayTrainDataset(Dataset):
+class XRayCopyDataset(Dataset):
     def __init__(self, is_train=True, transforms=None, copypaste=True, k=3):
         _filenames = np.array(pngs)
         _labelnames = np.array(jsons)
         self.copypaste = copypaste
         self.k = k
-          
-        # split train-valid
-        # 한 폴더 안에 한 인물의 양손에 대한 `.dcm` 파일이 존재하기 때문에
-        # 폴더 이름을 그룹으로 해서 GroupKFold를 수행합니다.
-        # 동일 인물의 손이 train, valid에 따로 들어가는 것을 방지합니다.
+     
         groups = [os.path.dirname(fname) for fname in _filenames]
         
-        # dummy label
         ys = [0 for fname in _filenames]
-        
-        # 전체 데이터의 20%를 validation data로 쓰기 위해 `n_splits`를
-        # 5으로 설정하여 KFold를 수행합니다.
+       
         gkf = GroupKFold(n_splits=5)
         
         filenames = []
         labelnames = []
         for i, (x, y) in enumerate(gkf.split(_filenames, ys, groups)):
             if is_train:
-                # 0번을 validation dataset으로 사용합니다.
                 if i == 0:
                     continue
                     
@@ -186,8 +176,6 @@ class XRayTrainDataset(Dataset):
             else:
                 filenames = list(_filenames[y])
                 labelnames = list(_labelnames[y])
-                
-                # skip i > 0
                 break
         
         self.filenames = filenames
@@ -288,7 +276,7 @@ class XRayTrainDataset(Dataset):
             image = result["image"]
             label = result["mask"] if self.is_train else label
         
-        image = image / 255. # 전처리
+        image = image / 255. 
 
         image = image.transpose(2, 0, 1)    
         label = label.transpose(2, 0, 1)
@@ -304,25 +292,17 @@ class XRayDataset(Dataset):
     def __init__(self, is_train=True, transforms=None):
         _filenames = np.array(pngs)
         _labelnames = np.array(jsons)
-        
-        # split train-valid
-        # 한 폴더 안에 한 인물의 양손에 대한 `.dcm` 파일이 존재하기 때문에
-        # 폴더 이름을 그룹으로 해서 GroupKFold를 수행합니다.
-        # 동일 인물의 손이 train, valid에 따로 들어가는 것을 방지합니다.
+  
         groups = [os.path.dirname(fname) for fname in _filenames]
         
-        # dummy label
         ys = [0 for fname in _filenames]
-        
-        # 전체 데이터의 20%를 validation data로 쓰기 위해 `n_splits`를
-        # 5으로 설정하여 KFold를 수행합니다.
+
         gkf = GroupKFold(n_splits=5)
         
         filenames = []
         labelnames = []
         for i, (x, y) in enumerate(gkf.split(_filenames, ys, groups)):
             if is_train:
-                # 0번을 validation dataset으로 사용합니다.
                 if i == 0:
                     continue
                     
@@ -332,8 +312,6 @@ class XRayDataset(Dataset):
             else:
                 filenames = list(_filenames[y])
                 labelnames = list(_labelnames[y])
-                
-                # skip i > 0
                 break
         
         self.filenames = filenames
@@ -354,16 +332,13 @@ class XRayDataset(Dataset):
         label_name = self.labelnames[item]
         label_path = os.path.join(LABEL_ROOT, label_name)
         
-        # process a label of shape (H, W, NC)
         label_shape = tuple(image.shape[:2]) + (len(CLASSES), )
         label = np.zeros(label_shape, dtype=np.uint8)
         
-        # read label file
         with open(label_path, "r") as f:
             annotations = json.load(f)
         annotations = annotations["annotations"]
         
-        # iterate each class
         for ann in annotations:
             c = ann["label"]
             class_ind = CLASS2IND[c]
@@ -371,7 +346,7 @@ class XRayDataset(Dataset):
             
             # polygon to mask
             class_label = np.zeros(image.shape[:2], dtype=np.uint8)
-            cv2.fillPoly(class_label, [points], 1) # polygon 내부 채워주는 함수
+            cv2.fillPoly(class_label, [points], 1) 
             label[..., class_ind] = class_label
         
         if self.transforms is not None:
@@ -381,112 +356,15 @@ class XRayDataset(Dataset):
             image = result["image"]
             label = result["mask"] if self.is_train else label
 
-        image = image / 255. # 전처리
+        image = image / 255.
 
-        # to tenser will be done later
-        image = image.transpose(2, 0, 1)    # make channel first
+        image = image.transpose(2, 0, 1)   
         label = label.transpose(2, 0, 1)
         
         image = torch.from_numpy(image).float()
         label = torch.from_numpy(label).float()
             
         return image, label
-
-
-
-########################### ORINGINAL ################################
-# class XRayDataset(Dataset):
-#     def __init__(self, is_train=True, transforms=None):
-#         _filenames = np.array(pngs)
-#         _labelnames = np.array(jsons)
-        
-#         # split train-valid
-#         # 한 폴더 안에 한 인물의 양손에 대한 `.dcm` 파일이 존재하기 때문에
-#         # 폴더 이름을 그룹으로 해서 GroupKFold를 수행합니다.
-#         # 동일 인물의 손이 train, valid에 따로 들어가는 것을 방지합니다.
-#         groups = [os.path.dirname(fname) for fname in _filenames]
-        
-#         # dummy label
-#         ys = [0 for fname in _filenames]
-        
-#         # 전체 데이터의 20%를 validation data로 쓰기 위해 `n_splits`를
-#         # 5으로 설정하여 KFold를 수행합니다.
-#         gkf = GroupKFold(n_splits=5)
-        
-#         filenames = []
-#         labelnames = []
-#         for i, (x, y) in enumerate(gkf.split(_filenames, ys, groups)):
-#             if is_train:
-#                 # 0번을 validation dataset으로 사용합니다.
-#                 if i == 0:
-#                     continue
-                    
-#                 filenames += list(_filenames[y])
-#                 labelnames += list(_labelnames[y])
-            
-#             else:
-#                 filenames = list(_filenames[y])
-#                 labelnames = list(_labelnames[y])
-                
-#                 # skip i > 0
-#                 break
-        
-#         self.filenames = filenames
-#         self.labelnames = labelnames
-#         self.is_train = is_train
-#         self.transforms = transforms
-    
-#     def __len__(self):
-#         return len(self.filenames)
-    
-#     def __getitem__(self, item):
-#         image_name = self.filenames[item]
-#         image_path = os.path.join(IMAGE_ROOT, image_name)
-        
-#         image = cv2.imread(image_path)
-#         image = image / 255. # 전처리
-        
-#         label_name = self.labelnames[item]
-#         label_path = os.path.join(LABEL_ROOT, label_name)
-        
-#         # process a label of shape (H, W, NC)
-#         label_shape = tuple(image.shape[:2]) + (len(CLASSES), )
-#         label = np.zeros(label_shape, dtype=np.uint8)
-        
-#         # read label file
-#         with open(label_path, "r") as f:
-#             annotations = json.load(f)
-#         annotations = annotations["annotations"]
-        
-#         # iterate each class
-#         for ann in annotations:
-#             c = ann["label"]
-#             class_ind = CLASS2IND[c]
-#             points = np.array(ann["points"])
-            
-#             # polygon to mask
-#             class_label = np.zeros(image.shape[:2], dtype=np.uint8)
-#             cv2.fillPoly(class_label, [points], 1) # polygon 내부 채워주는 함수
-#             label[..., class_ind] = class_label
-        
-#         if self.transforms is not None:
-#             inputs = {"image": image, "mask": label} if self.is_train else {"image": image}
-#             result = self.transforms(**inputs)
-            
-#             image = result["image"]
-#             label = result["mask"] if self.is_train else label
-
-#         # to tenser will be done later
-#         image = image.transpose(2, 0, 1)    # make channel first
-#         label = label.transpose(2, 0, 1)
-        
-#         image = torch.from_numpy(image).float()
-#         label = torch.from_numpy(label).float()
-            
-#         return image, label
-    
-
-
 
 ########################### CutMix ################################
 
