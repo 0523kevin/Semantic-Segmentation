@@ -81,25 +81,15 @@ class XrayInferenceDataset(Dataset):
     def __getitem__(self, item):
         image_name = self.filenames[item]
         image_path = os.path.join(IMAGE_ROOT, image_name)
-
         image = cv2.imread(image_path)
-        
-        #####
-        # image = np.asarray(image, dtype=np.uint8)
         image = image/255.
-
+        
         if self.transforms is not None:
             inputs = {"image": image}
             result = self.transforms(**inputs)
             image = result["image"]
-        
-        ####
-        # image = image/255.
-
         image = image.transpose(2, 0, 1)
-
         image = torch.from_numpy(image).float()
-
         return image, image_name
 
 
@@ -135,13 +125,7 @@ def inference(saved_dir, exp_name):
     model = torch.load(os.path.join(saved_dir, f"{exp_name}_best_model.pt"))
 
     tf = init_transform('base2') #A.Resize(512, 512)
-    # tf = A.Compose([
-    #     A.Resize(1024, 1024),
-    #     A.CLAHE(clip_limit=4, p=0.5),
-    #     A.RandomBrightnessContrast(),
-    # ]) 
-
-
+    
     ############## TTA #############
     # transform = tta.Compose([
     #     # tta.HorizontalFlip(),
@@ -181,11 +165,3 @@ def inference(saved_dir, exp_name):
         os.mkdir(output_path)
 
     df.to_csv(f"../inference/{exp_name}_output.csv", index=False) #TTA
-
-
-# if __name__=='__main__':
-#     exp_name = '344_unet2plus_r152_Adam_dicefocal_bright_1e-3_CosineAnnealingLR_resized1024'
-#     saved_dir = f'../checkpoints/result_{exp_name}'
-    
-#     inference(saved_dir, exp_name)
-
